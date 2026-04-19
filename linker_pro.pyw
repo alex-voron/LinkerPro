@@ -1,13 +1,14 @@
 import tkinter as tk
 from tkinter import messagebox, filedialog, ttk
-import webbrowser, os, tempfile, time, windnd, re, winsound, threading, requests, json
+import webbrowser, os, tempfile, time, re, winsound, threading, requests, json, sys, subprocess
 import pandas as pd
 from docx import Document
+from tkinterdnd2 import DND_FILES, TkinterDnD
 
-# --- ПІДКЛЮЧЕННЯ ДО GITHUB ---
-VERSION = "7.8"
-VERSION_URL = "https://raw.githubusercontent.com/alex-voron/LinkerPro/refs/heads/main/version.txt"
-FILE_URL = "https://raw.githubusercontent.com/alex-voron/LinkerPro/refs/heads/main/linker_pro.pyw"
+# --- ПАРАМЕТРИ GITHUB ---
+VERSION = "8.1" 
+VERSION_URL = "https://raw.githubusercontent.com/alex-voron/LinkerPro/main/version.txt"
+FILE_URL = "https://raw.githubusercontent.com/alex-voron/LinkerPro/main/linker_pro.pyw"
 
 class LinkerApp:
     def __init__(self, root):
@@ -16,7 +17,8 @@ class LinkerApp:
         self.root.geometry("520x650")
         self.root.resizable(False, False)
         
-        self.script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.script_path = os.path.abspath(sys.argv[0])
+        self.script_dir = os.path.dirname(self.script_path)
         self.config_file = os.path.join(self.script_dir, "config.json")
         
         self.lang_data = {
@@ -32,50 +34,29 @@ class LinkerApp:
                 'errors': "ПОМИЛКИ",
                 'copy_btn': "📋 КОПІЮВАТИ СПИСОК",
                 'copied': "✅ СКОПІЙОВАНО",
-                'update_found': "Доступна нова версія!",
+                'update_found': "Доступна нова версія! Оновити автоматично?",
                 'update_no': "У вас остання версія",
-                'update_err': "Помилка перевірки оновлень",
+                'update_err': "Помилка оновлення",
+                'update_success': "Оновлено! Перезапуск...",
                 'err_title': "Знайдено помилкові рядки:",
                 'line': "Рядок",
                 'total_html': "Всього"
             },
             'eng': { 
-                'zone': "📥\n\nDROP FILE HERE\n\nor CLICK", 
-                'zone_drop': "🚀\n\nRELEASE", 
-                'dedup': "Remove duplicates", 
-                'ping': "Check Status", 
-                'clear': "Clear", 
-                'last_res': "STATS", 
-                'found': "FOUND", 
-                'unique': "VALID", 
-                'errors': "ERRORS", 
-                'copy_btn': "📋 COPY", 
-                'copied': "✅ COPIED", 
-                'update_found': "Update available!", 
-                'update_no': "Up to date", 
-                'update_err': "Update check failed", 
-                'err_title': "Invalid lines:", 
-                'line': "Line",
-                'total_html': "Total"
+                'zone': "📥\n\nDROP FILE HERE\n\nor CLICK", 'zone_drop': "🚀\n\nRELEASE", 
+                'dedup': "Remove duplicates", 'ping': "Check Status", 'clear': "Clear", 
+                'last_res': "STATS", 'found': "FOUND", 'unique': "VALID", 'errors': "ERRORS", 
+                'copy_btn': "📋 COPY", 'copied': "✅ COPIED", 'update_found': "Update available!", 
+                'update_no': "Up to date", 'update_err': "Update failed", 'update_success': "Restarting...",
+                'err_title': "Invalid lines:", 'line': "Line", 'total_html': "Total"
             },
             'rus': { 
-                'zone': "📥\n\nПЕРЕТЯНИТЕ ФАЙЛ СЮДА\n\nили НАЖМИТЕ", 
-                'zone_drop': "🚀\n\nОТПУСТИТЕ", 
-                'dedup': "Удалять дубликаты", 
-                'ping': "Проверить Ping", 
-                'clear': "Очистить", 
-                'last_res': "СТАТИСТИКА", 
-                'found': "НАЙДЕНО", 
-                'unique': "ВАЛИДНЫХ", 
-                'errors': "ОШИБКИ", 
-                'copy_btn': "📋 КОПИРОВАТЬ", 
-                'copied': "✅ СКОПИРОВАНО", 
-                'update_found': "Доступно обновление!", 
-                'update_no': "Последняя версия", 
-                'update_err': "Ошибка обновления", 
-                'err_title': "Ошибочные строки:", 
-                'line': "Строка",
-                'total_html': "Всего"
+                'zone': "📥\n\nПЕРЕТЯНИТЕ ФАЙЛ СЮДА\n\nили НАЖМИТЕ", 'zone_drop': "🚀\n\nОТПУСТИТЕ", 
+                'dedup': "Удалять дубликаты", 'ping': "Проверить Ping", 'clear': "Очистить", 
+                'last_res': "СТАТИСТИКА", 'found': "НАЙДЕНО", 'unique': "ВАЛИДНЫХ", 'errors': "ОШИБКИ", 
+                'copy_btn': "📋 КОПИРОВАТЬ", 'copied': "✅ СКОПИРОВАНО", 'update_found': "Доступно обновление!", 
+                'update_no': "Последняя версия", 'update_err': "Ошибка обновления", 'update_success': "Перезапуск...",
+                'err_title': "Ошибочные строки:", 'line': "Строка", 'total_html': "Всего"
             }
         }
         
@@ -89,25 +70,46 @@ class LinkerApp:
         self.setup_ui()
         self.init_from_config()
         
-        # Реєстрація Drag-and-Drop
-        self.root.bind("<Visibility>", lambda e: [windnd.hook_dropfiles(self.root, func=self.handle_drop), self.root.unbind("<Visibility>")])
+        # РЕЄСТРАЦІЯ MODERN DND
+        self.action_zone.drop_target_register(DND_FILES)
+        self.action_zone.dnd_bind('<<Drop>>', self.handle_modern_drop)
+        self.action_zone.dnd_bind('<<DragEnter>>', lambda e: self.action_zone.config(bg=self.colors['dark' if self.dark_mode else 'light']['border']))
+        self.action_zone.dnd_bind('<<DragLeave>>', lambda e: self.action_zone.config(bg=self.colors['dark' if self.dark_mode else 'light']['zone']))
         
-        # Перевірка оновлень при старті
         threading.Thread(target=self.check_updates, args=(False,), daemon=True).start()
+
+    def handle_modern_drop(self, event):
+        path = event.data.strip('{}')
+        if path:
+            threading.Thread(target=self.process_file, args=(path,), daemon=True).start()
 
     def check_updates(self, manual=False):
         try:
-            res = requests.get(VERSION_URL, timeout=5)
-            online_v = res.text.strip()
-            # Порівнюємо версії
-            if online_v > VERSION:
-                if messagebox.askyesno("Update", f"{self.lang_data[self.curr_lang]['update_found']} (v{online_v})\nDownload now?"):
-                    webbrowser.open(FILE_URL)
-            elif manual:
-                messagebox.showinfo("Update", self.lang_data[self.curr_lang]['update_no'])
-        except:
-            if manual:
-                messagebox.showwarning("Update", self.lang_data[self.curr_lang]['update_err'])
+            url = f"{VERSION_URL}?t={int(time.time())}"
+            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+            if res.status_code == 200:
+                online_v = res.text.encode('utf-8').decode('utf-8-sig').strip()
+                online_v = [l.strip() for l in online_v.splitlines() if l.strip()][0]
+                def v_to_list(v): return [int(x) for x in re.findall(r'\d+', v)]
+                if v_to_list(online_v) > v_to_list(VERSION):
+                    if messagebox.askyesno("Update", self.lang_data[self.curr_lang]['update_found']):
+                        self.perform_auto_update()
+                elif manual:
+                    messagebox.showinfo("Update", self.lang_data[self.curr_lang]['update_no'])
+        except: pass
+
+    def perform_auto_update(self):
+        try:
+            new_code = requests.get(FILE_URL, headers={'User-Agent': 'Mozilla/5.0'}).content
+            new_file_path = self.script_path + ".new"
+            with open(new_file_path, "wb") as f: f.write(new_code)
+            bat_path = os.path.join(tempfile.gettempdir(), "linker_updater.bat")
+            with open(bat_path, "w", encoding="cp1251") as f:
+                f.write(f'@echo off\nchcp 1251 > nul\ntimeout /t 1 /nobreak > nul\ndel "{self.script_path}"\nren "{new_file_path}" "{os.path.basename(self.script_path)}"\nstart "" "{self.script_path}"\ndel "%~f0"\n')
+            messagebox.showinfo("Update", self.lang_data[self.curr_lang]['update_success'])
+            subprocess.Popen(["cmd.exe", "/c", bat_path], shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            self.root.quit(); sys.exit()
+        except: webbrowser.open(FILE_URL)
 
     def setup_ui(self):
         self.root.configure(bg=self.colors['light']['bg'])
@@ -207,12 +209,6 @@ class LinkerApp:
         for v in [self.tile_found, self.tile_unique, self.tile_errors]: v.config(text="0")
         self.progress['value'] = 0
 
-    def handle_drop(self, files):
-        paths = [f.decode('utf-8') if isinstance(f, bytes) else str(f) for f in files]
-        if paths:
-            self.action_zone.config(bg=self.colors['dark' if self.dark_mode else 'light']['border'], text=self.lang_data[self.curr_lang]['zone_drop'])
-            threading.Thread(target=self.process_file, args=(paths[0],), daemon=True).start()
-
     def browse_file(self):
         p = filedialog.askopenfilename()
         if p: threading.Thread(target=self.process_file, args=(p,), daemon=True).start()
@@ -265,4 +261,7 @@ class LinkerApp:
         return html + "</div></div></body></html>"
 
 if __name__ == "__main__":
-    root = tk.Tk(); app = LinkerApp(root); root.mainloop()
+    # ВИКОРИСТОВУЄМО КЛАС TkinterDnD ДЛЯ ПІДТРИМКИ ПЕРЕТЯГУВАННЯ
+    root = TkinterDnD.Tk()
+    app = LinkerApp(root)
+    root.mainloop()
